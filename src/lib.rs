@@ -7,6 +7,9 @@ use futures::Stream;
 use futures::sync::mpsc::{UnboundedSender, UnboundedReceiver, unbounded};
 use tokio_core::reactor::{Core, Handle};
 
+#[derive(Debug, Eq, PartialEq)]
+pub struct Stopped;
+
 pub trait Runner<T> {
     fn run(&mut self, t: T, handle: &Handle);
     fn shutdown(&mut self) {}
@@ -15,6 +18,20 @@ pub trait Runner<T> {
 pub struct FutureWorker<T> {
     sender: UnboundedSender<Option<T>>,
     thread_handle: Option<JoinHandle<()>>,
+}
+
+pub struct Scheduler<T> {
+    sender: UnboundedSender<Option<T>>,
+}
+
+impl<T> Scheduler<T> {
+    fn new(sender: UnboundedSender<Option<T>>) -> Self {
+        Scheduler { sender: sender }
+    }
+
+    pub fn schedule(&self, task: T) -> Result<(), Stopped> {
+        self.sender.unbounded_send(Some(task)).map_err(|_| Stopped)
+    }
 }
 
 fn poll<T, R: Runner<T>>(mut runner: R, rx: UnboundedReceiver<Option<T>>) {
@@ -53,6 +70,10 @@ impl<T: Send + 'static> FutureWorker<T> {
 
     pub fn schedule(&self, task: T) {
         self.sender.unbounded_send(Some(task)).unwrap();
+    }
+
+    pub fn get_scheduler(&self) -> Scheduler<T> {
+        Scheduler::new(self.sender.clone())
     }
 }
 
@@ -97,22 +118,24 @@ mod tests {
     #[test]
     fn test_future_worker() {
         let (tx, rx) = mpsc::channel();
-        {
-            let step_runner = StepRunner { ch: tx };
-            let worker = FutureWorker::new("test-async-worker", step_runner);
+        let step_runner = StepRunner { ch: tx };
+        let worker = FutureWorker::new("test-async-worker", step_runner);
 
-            let start = Instant::now();
-            worker.schedule(50);
-            worker.schedule(100);
-            worker.schedule(150);
-            assert_eq!(rx.recv().unwrap(), 50);
-            assert_eq!(rx.recv().unwrap(), 100);
-            assert_eq!(rx.recv().unwrap(), 150);
+        let start = Instant::now();
+        worker.schedule(50);
+        let scheduler = worker.get_scheduler();
+        scheduler.schedule(100).unwrap();
+        worker.schedule(150);
+        assert_eq!(rx.recv().unwrap(), 50);
+        assert_eq!(rx.recv().unwrap(), 100);
+        assert_eq!(rx.recv().unwrap(), 150);
 
-            assert!(start.elapsed() < Duration::from_millis(200));
-            assert!(start.elapsed() > Duration::from_millis(150));
-        }
+        assert!(start.elapsed() < Duration::from_millis(200));
+        assert!(start.elapsed() > Duration::from_millis(150));
 
+        drop(worker);
+        let res = scheduler.schedule(100);
+        assert_eq!(res, Err(Stopped));
         assert_eq!(rx.recv().unwrap(), 0);
     }
 }
