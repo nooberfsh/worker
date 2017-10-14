@@ -1,5 +1,5 @@
 [package]
-name = "future-worker"
+name = "worker"
 version = "0.1.0"
 authors = ["nooberfsh <nooberfsh@gmail.com>"]
 
