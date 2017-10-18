@@ -101,16 +101,16 @@ mod tests {
         let worker = Worker::new("test_general_worker", step_runner);
 
         let start = Instant::now();
-        worker.schedule(50);
+        worker.schedule(500);
         let scheduler = worker.get_scheduler();
-        scheduler.schedule(100).unwrap();
-        worker.schedule(150);
-        assert_eq!(rx.recv().unwrap(), 50);
-        assert_eq!(rx.recv().unwrap(), 100);
-        assert_eq!(rx.recv().unwrap(), 150);
+        scheduler.schedule(1000).unwrap();
+        worker.schedule(1500);
+        assert_eq!(rx.recv().unwrap(), 500);
+        assert_eq!(rx.recv().unwrap(), 1000);
+        assert_eq!(rx.recv().unwrap(), 1500);
 
-        assert!(start.elapsed() > Duration::from_millis(300));
-        assert!(start.elapsed() < Duration::from_millis(310));
+        assert!(start.elapsed() > Duration::from_millis(3000));
+        assert!(start.elapsed() < Duration::from_millis(3100));
 
         drop(worker);
         let res = scheduler.schedule(100);
