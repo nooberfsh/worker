@@ -5,7 +5,6 @@ use super::Stopped;
 
 pub trait Runner<T> {
     fn run(&mut self, task: T);
-    fn shutdown(&mut self) {}
 }
 
 pub struct Worker<T> {
@@ -16,7 +15,6 @@ pub struct Worker<T> {
 pub struct Scheduler<T> {
     sender: Sender<Option<T>>,
 }
-
 
 impl<T> Scheduler<T> {
     fn new(sender: Sender<Option<T>>) -> Self {
@@ -32,7 +30,6 @@ fn poll<T, R: Runner<T>>(mut runner: R, rx: &Receiver<Option<T>>) {
     while let Some(task) = rx.recv().unwrap() {
         runner.run(task)
     }
-    runner.shutdown();
 }
 
 impl<T: Send + 'static> Worker<T> {
@@ -79,42 +76,52 @@ mod tests {
     use std::sync::mpsc::{self, Sender};
     use std::time::{Duration, Instant};
 
-    struct StepRunner {
-        ch: Sender<u64>,
-    }
-
-    impl Runner<u64> for StepRunner {
-        fn run(&mut self, step: u64) {
-            thread::sleep(Duration::from_millis(step));
-            self.ch.send(step).unwrap();
-        }
-
-        fn shutdown(&mut self) {
-            self.ch.send(0).unwrap();
-        }
-    }
-
     #[test]
     fn test_general_worker() {
         let (tx, rx) = mpsc::channel();
-        let step_runner = StepRunner { ch: tx };
-        let worker = Worker::new("test_general_worker", step_runner);
+        let worker = Worker::new("test_general_worker", MyRunner { tx: tx });
 
         let start = Instant::now();
         worker.schedule(500);
-        let scheduler = worker.get_scheduler();
-        scheduler.schedule(1000).unwrap();
+        worker.schedule(1000);
         worker.schedule(1500);
         assert_eq!(rx.recv().unwrap(), 500);
         assert_eq!(rx.recv().unwrap(), 1000);
         assert_eq!(rx.recv().unwrap(), 1500);
 
         assert!(start.elapsed() > Duration::from_millis(3000));
-        assert!(start.elapsed() < Duration::from_millis(3100));
+        assert!(start.elapsed() < Duration::from_millis(4000));
+    }
+
+    #[test]
+    fn test_scheduler() {
+        let (tx, rx) = mpsc::channel();
+        let worker = Worker::new("test_general_scheduler", MyRunner { tx: tx });
+        let scheduler = worker.get_scheduler();
+
+        scheduler.schedule(10).unwrap();
+        assert_eq!(rx.recv().unwrap(), 10);
 
         drop(worker);
         let res = scheduler.schedule(100);
         assert_eq!(res, Err(Stopped));
         assert_eq!(rx.recv().unwrap(), 0);
+    }
+
+    struct MyRunner {
+        tx: Sender<u64>,
+    }
+
+    impl Runner<u64> for MyRunner {
+        fn run(&mut self, du: u64) {
+            thread::sleep(Duration::from_millis(du));
+            self.tx.send(du).unwrap();
+        }
+    }
+
+    impl Drop for MyRunner {
+        fn drop(&mut self) {
+            self.tx.send(0).unwrap();
+        }
     }
 }

@@ -187,7 +187,7 @@ mod tests {
     fn test_scheduler() {
         let (tx, rx) = mpsc::channel();
         let runner = SenderRunner { tx: tx };
-        let worker = Worker::new("test_future_worker", runner);
+        let worker = Worker::new("test_future_scheduler", runner);
         let scheduler = worker.get_scheduler();
 
         scheduler.schedule(1).unwrap();
