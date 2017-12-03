@@ -12,9 +12,14 @@ pub struct Worker<T> {
     thread_handle: Option<JoinHandle<()>>,
 }
 
-#[derive(Clone)]
 pub struct Scheduler<T> {
     sender: Sender<Option<T>>,
+}
+
+impl<T> Clone for Scheduler<T> {
+    fn clone(&self) -> Self {
+        Scheduler::new(self.sender.clone())
+    }
 }
 
 impl<T> Scheduler<T> {
