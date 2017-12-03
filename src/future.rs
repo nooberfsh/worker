@@ -22,6 +22,7 @@ pub struct Worker<T> {
     thread_handle: Option<JoinHandle<()>>,
 }
 
+#[derive(Clone)]
 pub struct Scheduler<T> {
     sender: UnboundedSender<Option<T>>,
 }
