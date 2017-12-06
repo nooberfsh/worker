@@ -6,7 +6,7 @@ use tokio_core::reactor::{Core, Handle};
 
 use super::Stopped;
 
-pub type BoxFuture = Box<Future<Item = (), Error = ()> + 'static>;
+pub type BoxFuture = Box<Future<Item = (), Error = ()>>;
 
 pub trait Runner<T> {
     fn init(&mut self, _: Handle) {}
