@@ -1,14 +1,14 @@
 use std::thread::{self, JoinHandle};
 
-use futures::{Stream, Future};
-use futures::sync::mpsc::{UnboundedSender, UnboundedReceiver, unbounded};
+use futures::{Future, Stream};
+use futures::sync::mpsc::{unbounded, UnboundedReceiver, UnboundedSender};
 use tokio_core::reactor::{Core, Handle};
 
 use super::Stopped;
 
 pub type BoxFuture = Box<Future<Item = (), Error = ()>>;
 
-pub trait Runner<T> {
+pub trait Runner<T>: Send + 'static {
     fn init(&mut self, _: Handle) {}
     fn future(&self, task: T, handle: &Handle) -> BoxFuture;
     fn spawn(&self, task: T, handle: &Handle) {
@@ -112,6 +112,9 @@ impl<T: Send + 'static> Worker<T> {
     }
 }
 
+trait Asserts: Send {}
+impl<T: Send> Asserts for Worker<T> {}
+
 impl<T> Drop for Worker<T> {
     fn drop(&mut self) {
         self.sender.unbounded_send(None).unwrap();
@@ -127,7 +130,7 @@ mod tests {
     use std::sync::mpsc::{self, Sender, TryRecvError};
     use std::time::{Duration, Instant};
 
-    use tokio_core::reactor::{Timeout, Handle};
+    use tokio_core::reactor::{Handle, Timeout};
     use futures::Future;
     use futures::sync::oneshot;
 

@@ -1,9 +1,9 @@
 use std::thread::{self, JoinHandle};
-use std::sync::mpsc::{self, Sender, Receiver};
+use std::sync::mpsc::{self, Receiver, Sender};
 
 use super::Stopped;
 
-pub trait Runner<T> {
+pub trait Runner<T>: Send + 'static {
     fn run(&mut self, task: T);
 }
 
@@ -65,6 +65,9 @@ impl<T: Send + 'static> Worker<T> {
         Scheduler::new(self.sender.clone())
     }
 }
+
+trait Asserts: Send {}
+impl<T: Send> Asserts for Worker<T> {}
 
 impl<T> Drop for Worker<T> {
     fn drop(&mut self) {
