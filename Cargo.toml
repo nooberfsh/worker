@@ -4,5 +4,4 @@ version = "0.1.0"
 authors = ["nooberfsh <nooberfsh@gmail.com>"]
 
 [dependencies]
-tokio-core = "0.1"
-futures = "0.1"
+futures = { git = "https://github.com/rust-lang-nursery/futures-rs.git" }

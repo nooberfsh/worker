@@ -1,20 +1,16 @@
 use std::thread::{self, JoinHandle};
+use std::mem;
 
-use futures::{Future, Stream};
-use futures::sync::mpsc::{unbounded, UnboundedReceiver, UnboundedSender};
-use tokio_core::reactor::{Core, Handle};
+use futures::prelude::*;
+use futures::executor::{Executor, LocalPool};
+use futures::channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender};
 
 use super::Stopped;
 
 pub type BoxFuture = Box<Future<Item = (), Error = ()>>;
 
 pub trait Runner<T>: Send + 'static {
-    fn init(&mut self, _: Handle) {}
-    fn future(&self, task: T, handle: &Handle) -> BoxFuture;
-    fn spawn(&self, task: T, handle: &Handle) {
-        let f = self.future(task, handle);
-        handle.spawn(f);
-    }
+    fn future(&self, task: T) -> BoxFuture;
 }
 
 pub struct Worker<T> {
@@ -42,28 +38,30 @@ impl<T> Scheduler<T> {
     }
 }
 
-fn poll<T, R: Runner<T>>(mut runner: R, rx: UnboundedReceiver<Option<T>>) {
-    let mut core = Core::new().unwrap();
-    let handle = core.handle();
-    runner.init(handle.clone());
-
-    let f = rx.take_while(|t| Ok(t.is_some())).for_each(|t| {
-        runner.spawn(t.unwrap(), &handle);
+fn poll<T, R: Runner<T>>(runner: R, rx: UnboundedReceiver<Option<T>>) {
+    let mut pool = LocalPool::new();
+    let mut exec = pool.executor();
+    let f = rx.take_while(|t| Ok(t.is_some())).for_each(move |t| {
+        let f = runner.future(t.unwrap());
+        let f = unsafe { mem::transmute(f) };
+        exec.spawn(f).unwrap();
         Ok(())
     });
-    core.run(f).unwrap();
+
+    let mut exec = pool.executor();
+    let _ = pool.run_until(f, &mut exec).unwrap();
 }
 
-fn poll_buffered<T, R: Runner<T>>(mut runner: R, rx: UnboundedReceiver<Option<T>>, amt: usize) {
-    let mut core = Core::new().unwrap();
-    let handle = core.handle();
-    runner.init(handle.clone());
+fn poll_buffered<T, R: Runner<T>>(runner: R, rx: UnboundedReceiver<Option<T>>, amt: usize) {
+    let mut pool = LocalPool::new();
 
     let f = rx.take_while(|t| Ok(t.is_some()))
-        .map(move |t| runner.future(t.unwrap(), &handle))
+        .map(move |t| runner.future(t.unwrap()))
         .buffer_unordered(amt)
         .for_each(|_| Ok(()));
-    core.run(f).unwrap();
+
+    let mut exec = pool.executor();
+    let _ = pool.run_until(f, &mut exec).unwrap();
 }
 
 impl<T: Send + 'static> Worker<T> {
@@ -225,7 +223,7 @@ mod tests {
     }
 
     impl Runner<oneshot::Receiver<u64>> for SenderRunner {
-        fn future(&self, tx: oneshot::Receiver<u64>, _handle: &Handle) -> BoxFuture {
+        fn future(&self, tx: oneshot::Receiver<u64>) -> BoxFuture {
             let sender = self.tx.clone();
             let f = tx.map_err(|_| ()).map(move |t| sender.send(t).unwrap());
             Box::new(f)
